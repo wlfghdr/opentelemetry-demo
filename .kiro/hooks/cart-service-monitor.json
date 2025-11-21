@@ -1,0 +1,26 @@
+{
+  "name": "Cart Service Resource Monitor",
+  "description": "Monitors Cart Service resource usage during development and alerts if approaching saturation",
+  "enabled": true,
+  "trigger": {
+    "type": "onFileSave",
+    "filePattern": "src/cart/**/*.cs"
+  },
+  "action": {
+    "type": "sendMessage",
+    "message": "Check Cart Service resource usage with Dynatrace. Query current CPU and memory metrics. If CPU > 25% or memory > 200MB, warn that we're approaching resource limits and suggest pausing development to increase resources. Include current metrics in the warning."
+  },
+  "metadata": {
+    "purpose": "Proactive monitoring during cart-inventory-validation feature development",
+    "thresholds": {
+      "cpu_warning": "25%",
+      "memory_warning": "200MB",
+      "error_rate_warning": "0.1%"
+    },
+    "dynatrace_queries": {
+      "cpu": "timeseries avg(dt.kubernetes.container.cpu_usage), from: now() - 15m, filter: contains(k8s.deployment.name, \"cart\")",
+      "memory": "timeseries avg(dt.kubernetes.container.memory_working_set), from: now() - 15m, filter: contains(k8s.deployment.name, \"cart\")",
+      "errors": "fetch logs | filter contains(k8s.deployment.name, \"cart\") and loglevel == \"ERROR\" and timestamp > now() - 15m | summarize cnt = count()"
+    }
+  }
+}
