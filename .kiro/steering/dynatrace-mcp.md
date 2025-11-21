@@ -259,3 +259,243 @@ fetch logs
 - **No metrics**: Verify OpenTelemetry Collector is forwarding to Dynatrace
 - **High cardinality**: Demo generates many trace IDs - always aggregate or filter by service/deployment
 - **Missing logs**: Some services are more verbose than others - check container logs directly if needed
+
+---
+
+## Production Readiness Analysis for Design Documents
+
+**CRITICAL REQUIREMENT**: When creating or reviewing design documents for features that involve service-to-service communication or performance-sensitive changes, you MUST perform a Dynatrace production readiness analysis.
+
+### When to Perform Analysis
+
+Perform Dynatrace analysis for designs that involve:
+- Adding new service-to-service calls (synchronous or asynchronous)
+- Modifying existing service call patterns
+- Adding timeouts, circuit breakers, or retry logic
+- Changes that may impact service latency or throughput
+- Features that depend on external service performance
+
+### Required Analysis Steps
+
+#### 1. Identify Affected Services
+
+From the requirements and design documents, identify:
+- Which services will be called
+- Which services will make new calls
+- Expected call frequency and patterns
+- Timeout and retry parameters
+
+#### 2. Gather Current Performance Metrics
+
+For each affected service, collect from Dynatrace:
+
+**Latency Distribution** (Last 24-48 hours):
+```dql
+timeseries avg(dt.service.request.response_time),
+  percentile(dt.service.request.response_time, 50),
+  percentile(dt.service.request.response_time, 90),
+  percentile(dt.service.request.response_time, 95),
+  percentile(dt.service.request.response_time, 99),
+  from: now() - 24h, interval: 1h,
+  filter: dt.entity.service == "<SERVICE-ID>",
+  by: {dt.entity.service}
+```
+
+**Request Volume and Error Rate**:
+```dql
+timeseries sum(dt.service.request.count),
+  sum(dt.service.request.failure_count),
+  from: now() - 24h, interval: 1h,
+  filter: dt.entity.service == "<SERVICE-ID>"
+```
+
+**Resource Utilization**:
+```dql
+timeseries avg(dt.kubernetes.container.cpu_usage),
+  avg(dt.kubernetes.container.memory_working_set),
+  from: now() - 24h, interval: 1h,
+  filter: contains(k8s.deployment.name, "<service-name>")
+```
+
+**Service Dependencies**:
+```dql
+fetch dt.entity.service
+| filter id == "<SERVICE-ID>"
+| fields entity.name, calls, called_by
+```
+
+#### 3. Analyze Compatibility with Design
+
+Compare design assumptions against production reality:
+
+| Design Parameter | Production Reality | Risk Level |
+|------------------|-------------------|------------|
+| Expected latency | Actual P50/P95/P99 | HIGH if mismatch |
+| Timeout setting | Service P95/P99 | HIGH if timeout < P95 |
+| Expected load | Current request rate | MEDIUM if >30% increase |
+| Circuit breaker threshold | Current error rate | MEDIUM if too sensitive |
+| Resource capacity | Current CPU/Memory | MEDIUM if near limits |
+
+#### 4. Calculate Impact
+
+**Timeout Rate Estimation**:
+- If timeout < P95: ~(100 - 95)% = 5% timeout rate
+- If timeout < P90: ~(100 - 90)% = 10% timeout rate
+- If timeout < P50: ~50% timeout rate (CRITICAL)
+
+**Load Impact**:
+- New calls per hour = (calling service requests/hour)
+- Load increase % = (new calls / current calls) × 100
+- If >30% increase: HIGH RISK - may degrade performance
+
+**Latency Impact**:
+- New latency = baseline + (dependency avg latency)
+- If new latency > target SLO: HIGH RISK
+
+#### 5. Risk Assessment
+
+Classify the change as:
+
+**LOW RISK** ✅:
+- Timeout > P99 of dependency
+- Load increase <10%
+- Fail-open pattern implemented
+- Circuit breaker configured appropriately
+- Target SLOs achievable
+
+**MEDIUM RISK** ⚠️:
+- Timeout between P95 and P99
+- Load increase 10-30%
+- Resilience patterns in place
+- May require monitoring and tuning
+
+**HIGH RISK** ❌:
+- Timeout < P95 of dependency
+- Load increase >30%
+- No resilience patterns
+- Target SLOs not achievable
+- Time-based performance variations
+
+#### 6. Required Actions Based on Risk
+
+**For HIGH RISK changes**:
+1. **DO NOT PROCEED** with current design
+2. **OPTIMIZE** the dependency service first
+3. **ADJUST** design parameters (timeout, SLOs, etc.)
+4. **IMPLEMENT** alternative approach (caching, async, etc.)
+5. **DOCUMENT** findings and recommendations
+6. **RE-ANALYZE** after changes
+
+**For MEDIUM RISK changes**:
+1. **ADJUST** design parameters if needed
+2. **ADD** additional monitoring and alerting
+3. **PLAN** gradual rollout (1% → 10% → 50% → 100%)
+4. **PREPARE** rollback procedures
+5. **DOCUMENT** monitoring plan
+
+**For LOW RISK changes**:
+1. **PROCEED** with design as planned
+2. **IMPLEMENT** standard monitoring
+3. **DOCUMENT** baseline metrics for comparison
+
+### Documentation Requirements
+
+Create the following documents in the spec directory:
+
+1. **PRODUCTION-READINESS.md**:
+   - Current performance metrics
+   - Risk assessment
+   - Impact analysis
+   - Recommendations
+
+2. **LATENCY-INVESTIGATION.md** (if issues found):
+   - Root cause analysis
+   - Time-based patterns
+   - Optimization recommendations
+
+3. **DIAGNOSTIC-QUERIES.md** (if issues found):
+   - Ready-to-run DQL queries
+   - Investigation checklist
+   - Monitoring dashboard setup
+
+### Example Analysis Output
+
+```markdown
+## Production Readiness Assessment
+
+**Feature**: Cart Inventory Validation
+**Risk Level**: ❌ HIGH RISK
+
+### Current Metrics
+- Product Catalog P95: 1300ms
+- Design Timeout: 500ms
+- Expected Timeout Rate: 40%
+
+### Findings
+- Timeout setting incompatible with production performance
+- Circuit breaker will open continuously
+- Feature will only work 4% of the time
+
+### Recommendations
+1. Optimize Product Catalog service (reduce P95 to <400ms)
+2. OR increase timeout to 1500ms (accept higher cart latency)
+3. OR implement caching layer (bypass dependency)
+
+### Decision
+DO NOT PROCEED until Product Catalog P95 is optimized.
+```
+
+### Integration with Spec Workflow
+
+**During Design Phase**:
+1. Complete initial design document
+2. **STOP before finalizing**
+3. Perform Dynatrace production readiness analysis
+4. Update design based on findings
+5. Document risk assessment
+6. Get user approval with risk disclosure
+
+**Before Implementation**:
+1. Verify production metrics haven't changed
+2. Confirm risk assessment is still valid
+3. Ensure monitoring is in place
+
+### Davis CoPilot Integration
+
+Use Davis CoPilot to get AI-powered insights:
+
+```
+I'm planning to add [describe change]. Based on current metrics:
+- Service A: P95 = Xms, load = Y req/hour
+- Service B: P95 = Xms, load = Y req/hour
+- Proposed timeout: Xms
+
+What risks do you see? Is Service B ready for the additional load?
+```
+
+### Continuous Monitoring
+
+After deployment:
+- Monitor actual vs. predicted metrics
+- Update risk assessment if patterns change
+- Feed learnings back into future analyses
+
+---
+
+## Summary
+
+**Always perform Dynatrace analysis before finalizing designs that involve service dependencies.**
+
+This prevents:
+- ❌ Deploying incompatible timeout settings
+- ❌ Overloading downstream services
+- ❌ Missing performance bottlenecks
+- ❌ Violating SLOs
+- ❌ Creating cascading failures
+
+This ensures:
+- ✅ Data-driven design decisions
+- ✅ Realistic performance expectations
+- ✅ Appropriate resilience patterns
+- ✅ Successful production deployments
+- ✅ Maintainable systems
