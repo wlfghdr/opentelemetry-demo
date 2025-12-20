@@ -72,6 +72,24 @@ docker logs <container-name>
 make restart service=<service-name>
 ```
 
+## Observability-Driven Development (ODD)
+
+ODD is a non-negotiable part of change implementation in this repo: behavior changes are not “done” unless they can be **validated via telemetry**.
+
+### Guardrails (apply to code changes)
+
+- **Instrument + verify:** for non-trivial changes, ensure traces/metrics/logs exist to evaluate impact (latency, error rate, resource usage).
+- **Tier-based rigor:**
+	- Tier 0 (docs/refactor): minimal validation.
+	- Tier 1 (non-hot-path): targeted tests + basic telemetry.
+	- Tier 2 (hot-path / sync downstream call / retry/payload changes): baseline comparison required (Dynatrace preferred), strict timeouts/budgets, and explicit rollback triggers.
+- **High-cardinality safety:** do not add unbounded labels/attributes (raw user input, emails, full IDs, unique URLs) to metrics or span attributes.
+- **Baseline required (Tier 2):** provide before/after evidence via Dynatrace DQL or local load + p95/error rate comparison.
+
+### References (within Kiro)
+
+- `.kiro/steering/dynatrace-mcp.md` (Dynatrace MCP usage + DQL templates)
+
 ### Protobuf
 
 Services use shared protobuf definitions from `/pb/demo.proto`. Generate code with `make docker-generate-protobuf` or `make generate-protobuf` (local).
