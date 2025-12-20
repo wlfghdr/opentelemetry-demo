@@ -46,9 +46,9 @@ When asked to implement or change behavior (especially hot paths):
    - Does it add synchronous I/O, new dependencies, or expensive computation?
 
 2) **Check production reality (preferred) or establish a baseline (fallback)**
-   - If Dynatrace is available, query metrics/logs/traces before adding synchronous work on hot paths.
-    - If Dynatrace is not available in the current environment, state the limitation and:
-       - propose the DQL you would run (see `.github/odd-dynatrace-dql.md`), and/or
+   - **Dynatrace-first (default):** query metrics/logs/traces before adding synchronous work on hot paths.
+   - If Dynatrace is not available in the current environment, state the limitation and:
+       - propose the DQL you would run (discovery-first; verify then execute), and/or
        - establish a local baseline (e.g., run the demo + load-generator and compare p95 latency / error rate before vs after).
 
 3) **Risk gate**
@@ -134,15 +134,115 @@ If asked “is this safe for production?”, answer in terms of:
 4) **Verify then execute**: syntactically validate DQL before running if needed.
 5) **Summarize as deltas**: what changed, expected impact, and go/no-go thresholds.
 
-### Dynatrace queries (DQL templates)
+Rule of thumb for query cost:
+- Use short windows (`now() - 30m` to `now() - 2h`) for triage.
+- Use longer windows (e.g., `now() - 24h`) for baselines only with tight filters + aggregation.
+- Filter by time early, then narrow by stable identifiers before doing text search.
 
-See `.github/odd-dynatrace-dql.md` for:
+### Dynatrace query hygiene (high-signal rules)
 
-- discovering namespaces/deployments/services (don’t guess filters)
-- CPU/memory by deployment
-- error logs by deployment
-- service response time/failures
-- slow spans / hot operations
+- **Don’t mix record types:** keep each DQL snippet to a single query (no multi-statement blocks).
+- **`summarize` requires an aggregation** (e.g., `count()`, `avg(...)`, `percentile(...)`).
+- **`sort` must use an alias**, not an aggregation function call.
+- **Avoid `in(...)` / set-literal syntax** for multi-values in DQL filters; use explicit `or` chains.
+- **Entity vs K8s fields:** K8s metadata (like `k8s.namespace.name`) is not guaranteed on entity record types such as `fetch dt.entity.service`. Prefer filtering entities by `entity.name` patterns, IDs, or tags.
+- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
+
+### When reviewing or fixing a DQL query
+
+- Identify issues first (syntax, field availability, filter order/cost) before executing anything.
+- Fix and **`verify_dql`** first; only then execute.
+- If a query returns 0 records, suggest the minimal next steps:
+   - widen time range,
+   - verify field names exist (run a minimal `fetch <type> | limit 5`),
+   - check case/values and `and` logic,
+   - validate entity IDs (canonical `SERVICE-...` etc.).
+
+### Dynatrace queries
+
+- Discover filters first (namespace/deployment/service entity) before narrowing.
+- Keep each DQL example to a single query (no multi-statement blocks).
+- Verify then execute; summarize deltas vs baseline.
+
+#### Minimal DQL templates (copy/paste)
+
+**Discover active Kubernetes namespaces**
+
+```dql
+fetch logs
+| filter timestamp > now() - 1h
+| summarize logCount = count(), by:{k8s.namespace.name}
+| sort logCount desc
+```
+
+**Discover deployments within a namespace**
+
+```dql
+fetch logs
+| filter timestamp > now() - 1h
+   and k8s.namespace.name == "<YOUR_NAMESPACE>"
+| summarize logCount = count(), by:{k8s.deployment.name}
+| sort logCount desc
+```
+
+**List service entities (entity names)**
+
+```dql
+fetch dt.entity.service
+| fields id, entity.name
+| sort entity.name asc
+```
+
+**Errors in logs by deployment**
+
+```dql
+fetch logs
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
+   and loglevel == "ERROR"
+   and timestamp > now() - 1h
+| summarize errorCount = count(), by:{k8s.deployment.name}
+| sort errorCount desc
+```
+
+**CPU/memory by deployment**
+
+```dql
+timeseries avg(dt.kubernetes.container.cpu_usage),
+   avg(dt.kubernetes.container.memory_working_set),
+   from: now() - 1h, interval: 1m,
+   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
+   by: {k8s.deployment.name}
+```
+
+**Service latency + failures (service metrics)**
+
+```dql
+timeseries avg(dt.service.request.response_time),
+   percentile(dt.service.request.response_time, 95),
+   sum(dt.service.request.failure_count),
+   from: now() - 1h, interval: 1m,
+   by: {dt.entity.service}
+```
+
+**Slow spans (hot operations)**
+
+```dql
+fetch spans
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
+   and timestamp > now() - 30m
+   and duration > 1000000000
+| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
+| sort p95 desc
+```
+
+**Metric discovery (when you don’t know the key)**
+
+```dql
+fetch metric.series
+| filter dt.entity.service == "<SERVICE-ID>"
+| summarize cnt = count(), by:{metric.key}
+| sort cnt desc | limit 50
+```
 
 ## Local baseline workflow (when production telemetry isn’t available)
 
