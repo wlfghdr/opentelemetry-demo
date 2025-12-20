@@ -1,48 +1,71 @@
-## Dynatrace MCP for OpenTelemetry Demo
+## Dynatrace MCP for Microservices Apps (Template)
 
-This guide covers using the Dynatrace MCP server to monitor and troubleshoot the OpenTelemetry Astronomy Shop demo.
+This guide covers using the Dynatrace MCP server to monitor and troubleshoot a microservices-based system.
 
 ### Quick Start
 
-The demo runs in Kubernetes with namespace typically named `otel-demo` or similar. All services export telemetry to the OpenTelemetry Collector, which forwards to Dynatrace.
+Do not assume runtime details (namespace, cluster, deployment names, service entity naming). Always discover them first.
 
-### Finding Demo Services
+If your system runs in Kubernetes, most filters will use `k8s.namespace.name` and `k8s.deployment.name`.
+If it runs outside Kubernetes, prefer `dt.entity.service`, `service.name`, `cloud.application`, and/or tags available in your environment.
+
+All example queries below are templates. Replace placeholders like `<YOUR_NAMESPACE>` or `<SERVICE_SUBSTRING>` with values discovered from the environment.
+
+### Step 0: Discovery (derive the right filters)
+
+Start broad, then narrow. The goal is to answer:
+1) What namespaces and deployments are active?
+2) What are the service entity names in Dynatrace?
+3) What tag(s) or naming convention can reliably isolate “this system” from everything else?
+
+**Discover active namespaces (Kubernetes environments)**
+```dql
+fetch logs
+| filter timestamp > now() - 1h
+| summarize logCount = count(), by:{k8s.namespace.name}
+| sort logCount desc
+```
+
+**Discover deployments within a namespace**
+```dql
+fetch logs
+| filter timestamp > now() - 1h
+  and k8s.namespace.name == "<YOUR_NAMESPACE>"
+| summarize logCount = count(), by:{k8s.deployment.name}
+| sort logCount desc
+```
+
+**Discover services (service entity names)**
+```dql
+fetch dt.entity.service
+| fields id, entity.name
+| sort entity.name asc
+```
+
+Tip: Once you see stable identifiers, prefer exact matches (`==`) over fuzzy patterns (`contains`/`matchesValue`) to avoid accidental cross-system noise.
+
+### Finding Services (generic)
+
+If you know a likely substring for the system (e.g., a namespace, environment name, or app name), start with that:
 
 ```dql
-// Find all demo services
-find_entity_by_name("otel-demo")
-
-// Locate specific services (adjust namespace as needed)
 fetch dt.entity.service
-| filter matchesValue(entity.name, "*otel-demo*")
+| filter contains(entity.name, "<SERVICE_SUBSTRING>")
 | fields id, entity.name, calls, called_by
 ```
 
-Service naming pattern: `[<cluster>][otel-demo] <service-name>`
-
-**Core services to monitor:**
-- frontend (Next.js)
-- product-catalog (Go)
-- cart (C#)
-- checkout (Go)
-- payment (Node.js)
-- shipping (Rust)
-- recommendation (Python)
-- ad (Java)
-- email (Ruby)
-- accounting (C#)
-- fraud-detection (Kotlin)
+If you don’t know any substring, use the discovery queries above first.
 
 ### Common Investigation Scenarios
 
 #### 1. Service Performance Issues
 
 ```dql
-// Find slow services in the demo
+// Find slow services in the system
 timeseries avg(dt.service.request.response_time), 
   percentile(dt.service.request.response_time, 95),
   from: now() - 1h, interval: 1m,
-  filter: matchesValue(entity.name, "*otel-demo*"),
+  // Optional: add an environment-specific filter once discovered
   by: {dt.entity.service}
 
 // Check specific service (e.g., checkout)
@@ -55,9 +78,9 @@ timeseries avg(dt.service.request.response_time),
 #### 2. Error Analysis
 
 ```dql
-// Find which demo services have errors
+// Find which services have errors (Kubernetes)
 fetch logs 
-| filter matchesValue(k8s.namespace.name, "*otel*") 
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>" 
   and loglevel == "ERROR" 
   and timestamp > now() - 1h
 | summarize errorCount = count(), by:{k8s.deployment.name}
@@ -75,16 +98,16 @@ fetch logs
 #### 3. Resource Usage
 
 ```dql
-// Container CPU/Memory across all demo services
+// Container CPU/Memory across deployments (Kubernetes)
 timeseries avg(dt.kubernetes.container.cpu_usage),
   avg(dt.kubernetes.container.memory_working_set),
   from: now() - 1h, interval: 1m,
-  filter: matchesValue(k8s.namespace.name, "*otel*"),
+  filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
   by: {k8s.deployment.name}
 
 // Check if services are hitting resource limits
 fetch dt.entity.cloud_application_instance 
-| filter matchesValue(k8s.namespace.name, "*otel*")
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
 | summarize avgCPU = avg(dt.kubernetes.container.cpu_usage),
     cpuLimit = max(dt.kubernetes.container.limits_cpu),
     avgMemory = avg(dt.kubernetes.container.memory_working_set),
@@ -95,14 +118,14 @@ fetch dt.entity.cloud_application_instance
 #### 4. Service Dependencies
 
 ```dql
-// Map service call relationships
+// Map service call relationships (narrow with a discovered filter)
 fetch dt.entity.service
-| filter matchesValue(entity.name, "*otel-demo*")
+| filter contains(entity.name, "<SERVICE_SUBSTRING>")
 | fields entity.name, calls, called_by
 
-// Trace slow requests through the stack
+// Trace slow requests through the stack (Kubernetes)
 fetch spans 
-| filter matchesValue(k8s.namespace.name, "*otel*")
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
   and timestamp > now() - 30m 
   and duration > 1000000000
 | summarize avgDuration = avg(duration), 
@@ -114,12 +137,12 @@ fetch spans
 
 #### 5. Kafka Message Flow
 
-The demo uses Kafka for checkout, accounting, and fraud-detection services:
+If your system uses Kafka, you can start with these templates:
 
 ```dql
 // Check Kafka-related errors
 fetch logs
-| filter matchesValue(k8s.namespace.name, "*otel*")
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
   and (contains(content, "kafka") or contains(content, "Kafka"))
   and loglevel == "ERROR"
   and timestamp > now() - 1h
@@ -135,12 +158,12 @@ fetch logs
 
 #### 6. Database Performance
 
-PostgreSQL is used by accounting and product-reviews services:
+If your system uses a database (e.g., PostgreSQL), you can start with these templates:
 
 ```dql
 // Find database-related errors
 fetch logs
-| filter matchesValue(k8s.namespace.name, "*otel*")
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
   and (contains(content, "postgres") or contains(content, "database"))
   and loglevel == "ERROR"
   and timestamp > now() - 1h
@@ -201,8 +224,8 @@ timeseries avg(dt.runtime.go.scheduler.goroutine_count),
 ### Problem Detection
 
 ```dql
-// Find active problems in the demo
-list_problems(filter: "contains(k8s.namespace.name, \"otel-demo\")")
+// Find active problems (narrow with a discovered filter)
+list_problems(filter: "k8s.namespace.name == \"<YOUR_NAMESPACE>\"")
 
 // Problems affecting specific services
 list_problems(filter: "in(affected_entity_ids, \"<service-id>\")")
@@ -213,7 +236,7 @@ chat_with_davis_copilot("What's causing the high error rate in the checkout serv
 
 ### Load Generator Analysis
 
-The demo includes a load-generator service (Locust):
+If your system includes a load generator, you can correlate generated load with service performance:
 
 ```dql
 // Monitor load generator activity
@@ -225,24 +248,24 @@ fetch logs
 // Correlate load with service performance
 timeseries avg(dt.service.request.count),
   from: now() - 1h, interval: 1m,
-  filter: matchesValue(k8s.namespace.name, "*otel*"),
+  // Optional: add a filter once you discovered how to isolate your system
   by: {dt.entity.service}
 ```
 
-### Best Practices for Demo Monitoring
+### Best Practices
 
-1. **Start with namespace filter**: Always filter by `k8s.namespace.name` to isolate demo traffic
-2. **Use short time ranges**: Demo generates continuous load, so `now() - 1h` is usually sufficient
-3. **Monitor service interactions**: The demo showcases distributed tracing - use span queries to follow requests
+1. **Start with an isolation filter**: Prefer `k8s.namespace.name == "<YOUR_NAMESPACE>"` (Kubernetes) or a stable service naming/tag filter.
+2. **Use short time ranges for triage**: `now() - 30m` to `now() - 2h` is usually enough.
+3. **Monitor service interactions**: Use span queries to follow requests through the dependency graph.
 4. **Check all log levels**: Demo services log at INFO, WARN, and ERROR levels
-5. **Watch resource usage**: Services have memory limits (20M-500M) - monitor for OOMKilled events
+5. **Watch resource usage**: Monitor CPU/memory and restarts/OOMKilled events.
 
 ### Quick Health Check
 
 ```dql
-// Overall demo health snapshot
+// Overall health snapshot (Kubernetes)
 fetch logs
-| filter matchesValue(k8s.namespace.name, "*otel*")
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
   and timestamp > now() - 15m
 | summarize logCount = count(), 
     errorCount = countIf(loglevel == "ERROR"),
@@ -255,9 +278,9 @@ fetch logs
 
 ### Troubleshooting Tips
 
-- **Service not found**: Check namespace name - it may be `opentelemetry-demo`, `otel-demo`, or custom
-- **No metrics**: Verify OpenTelemetry Collector is forwarding to Dynatrace
-- **High cardinality**: Demo generates many trace IDs - always aggregate or filter by service/deployment
+- **Hook/query returns no data**: Your filter is likely wrong. Re-run the discovery queries and adjust.
+- **No metrics**: Verify telemetry export pipeline is configured (OpenTelemetry Collector / OneAgent / ingestion).
+- **High cardinality / noisy results**: Narrow filters, aggregate (`summarize`) early, and prefer exact matches.
 - **Missing logs**: Some services are more verbose than others - check container logs directly if needed
 
 ---
