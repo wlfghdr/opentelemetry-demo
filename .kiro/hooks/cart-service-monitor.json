@@ -3,12 +3,12 @@
   "description": "Monitors Cart Service resource usage during development and alerts if approaching saturation",
   "enabled": true,
   "trigger": {
-    "type": "onFileSave",
-    "filePattern": "src/cart/**/*.cs"
+    "type": "fileSave",
+    "target": "src/cart/**/*.cs"
   },
   "action": {
-    "type": "sendMessage",
-    "message": "Check Cart Service resource usage with Dynatrace. Query current CPU and memory metrics. If CPU > 25% or memory > 200MB, warn that we're approaching resource limits and suggest pausing development to increase resources. Include current metrics in the warning."
+    "type": "agentPrompt",
+    "prompt": "You are running as a Kiro Agent Hook on *File Save* for Cart service C# files.\n\nGoal: provide a fast, data-driven health check using Dynatrace so developers know if they are pushing the Cart service toward saturation while implementing cart-inventory-validation.\n\nInstructions:\n1) Use the Dynatrace MCP tools to query the LAST 15 minutes of Cart service resource usage.\n2) Report current CPU and memory (include the latest datapoint and the max over the window).\n3) Query error volume (count of ERROR logs over the window).\n4) Evaluate thresholds and print an explicit status line:\n   - CPU warning if > 25%\n   - Memory warning if > 200MB\n   - Error warning if errors > 0 (or if error-rate > 0.1% if you can compute it)\n5) If any warning triggers, recommend pausing development and increasing resources (or narrowing recent changes) before proceeding.\n6) If Dynatrace MCP is not configured/available, say so and output the DQL queries that should be run manually.\n\nDQL queries to use:\n- CPU:\n  timeseries avg(dt.kubernetes.container.cpu_usage), from: now() - 15m, interval: 1m, filter: contains(k8s.deployment.name, \"cart\")\n- Memory:\n  timeseries avg(dt.kubernetes.container.memory_working_set), from: now() - 15m, interval: 1m, filter: contains(k8s.deployment.name, \"cart\")\n- Errors:\n  fetch logs | filter contains(k8s.deployment.name, \"cart\") and loglevel == \"ERROR\" and timestamp > now() - 15m | summarize cnt = count()\n\nOutput format (keep it short):\nCart Service Metrics (Last 15 min):\n- CPU: <latest>% (max <max>%)\n- Memory: <latest>MB (max <max>MB)\n- Errors: <count>\nStatus: HEALTHY|WARNING\nRecommendation: <one sentence>"
   },
   "metadata": {
     "purpose": "Proactive monitoring during cart-inventory-validation feature development",
