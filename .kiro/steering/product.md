@@ -8,6 +8,10 @@ A microservice-based distributed system demonstrating OpenTelemetry instrumentat
 - Serve as a base for vendors and tooling authors to demonstrate OpenTelemetry integrations
 - Act as a living example for testing new OpenTelemetry API, SDK, and component versions
 
+### Delivery Principle (ODD)
+
+Changes should be shipped with **measurable observability**: when behavior changes, ensure it can be validated via traces/metrics/logs (not just “it works locally”).
+
 ### Key Features
 
 - Multi-language microservices architecture (15+ services)

@@ -2,6 +2,22 @@
 
 This guide covers using the Dynatrace MCP server to monitor and troubleshoot a microservices-based system.
 
+## Observability-Driven Development (ODD) usage
+
+Use Dynatrace not only for troubleshooting, but also as a **validation gate** for code changes.
+
+### When implementing a behavior change
+
+- **Baseline first (Tier 2):** before adding synchronous work on hot paths (new downstream calls, retries, payload changes), capture a baseline for p95 latency, error rate, and resource saturation signals.
+- **After-change verification:** run the same queries after the change and summarize deltas.
+- **Rollback criteria:** state explicit thresholds that trigger rollback (e.g., error rate increase, p95 regression, CPU saturation, OOM/restarts).
+
+### Guardrails
+
+- Don’t guess filters: always discover namespace/deployment/service identifiers first.
+- Prefer stable identifiers and exact matches over fuzzy patterns when possible.
+- Avoid high-cardinality fields/filters in dashboards/metrics strategy (don’t build approaches around raw user input, full IDs, or unique URLs).
+
 ### Quick Start
 
 Do not assume runtime details (namespace, cluster, deployment names, service entity naming). Always discover them first.
