@@ -19,14 +19,16 @@ Der Fork ist erheblich hinter dem Upstream-Repository zurück (1516 Commits).
 
 ## Unterschiede
 
-### Dateien, die im Fork geändert/entfernt wurden
+### Dateien, die im Fork zusätzlich existieren
 
-Der Fork hat die folgenden Dateien im Vergleich zum Upstream entfernt:
+Der Fork hat die folgenden Dateien, die im Upstream NICHT vorhanden sind:
 
-1. `.github/copilot-instructions.md` (272 Zeilen entfernt)
-2. `.kiro/steering/odd.md` (161 Zeilen entfernt)
+1. `.github/copilot-instructions.md` (272 Zeilen hinzugefügt)
+2. `.kiro/steering/odd.md` (161 Zeilen hinzugefügt)
 
-**Gesamt:** 433 Zeilen wurden gelöscht
+**Gesamt:** 433 Zeilen wurden im Fork hinzugefügt
+
+Diese Dateien enthalten Dokumentation für Observability-Driven Development (ODD) und GitHub Copilot-Anweisungen.
 
 ### Einzigartiger Commit im Fork
 
@@ -34,14 +36,17 @@ Der Fork hat die folgenden Dateien im Vergleich zum Upstream entfernt:
 4ab810a - Refactor observability documentation and remove outdated files
 ```
 
-Dieser Commit entfernt Dokumentationsdateien für Observability-Driven Development (ODD).
+Dieser Commit scheint die ODD-Dokumentation hinzugefügt/refaktoriert zu haben.
 
 ## Detaillierte Diff-Statistiken
 
+Vergleich: origin/main (Fork) vs upstream/main (Upstream)
+
 ```
-.github/copilot-instructions.md | 272 deletions
-.kiro/steering/odd.md           | 161 deletions
-2 files changed, 433 deletions(-)
+Dateien im Fork, die im Upstream fehlen:
+.github/copilot-instructions.md | 272 Zeilen (neu)
+.kiro/steering/odd.md           | 161 Zeilen (neu)
+2 Dateien, 433 neue Zeilen
 ```
 
 ## Kürzliche Upstream-Commits (Top 20)
@@ -73,450 +78,450 @@ ae2e225 - build(deps): bump the go-production-dependencies group across 2 direct
 
 ## Vollständiger Diff
 
-Der vollständige Diff zwischen `origin/main` und `upstream/main` ist unten verfügbar.
+Der vollständige Diff zeigt, was im Fork zusätzlich vorhanden ist (origin/main vs upstream/main).
 
 diff --git a/.github/copilot-instructions.md b/.github/copilot-instructions.md
-deleted file mode 100644
-index 921823b..0000000
---- a/.github/copilot-instructions.md
-+++ /dev/null
-@@ -1,272 +0,0 @@
--# GitHub Copilot Instructions — Observability‑Driven Development (ODD)
--
--These instructions guide Copilot to support **observability‑driven development**: use real production signals (or best available telemetry) during design and implementation to **avoid breaking the system**, and to ship safely.
--
--## Agentic expectations (how Copilot should behave)
--
--When the user asks to implement a change:
--
--- Prefer taking action over theorizing: explore the repo, implement the smallest safe change, and validate it.
--- Use a short plan for non-trivial work (multi-file, multi-step, or behavior changes on request paths).
--- Treat observability as part of the feature: changes are not “done” until they can be evaluated via traces/metrics/logs.
--- If the request is ambiguous, ask 1–3 precise clarifying questions or state assumptions explicitly.
--
--When you cannot access production telemetry (no Dynatrace access), say so and use the local baseline workflow.
--
--## Repo context (don’t guess)
--
--Do not assume what the repo contains.
--
--Before suggesting code changes or observability queries, first discover:
--
--1) **How the system runs**
--   - Kubernetes, Docker Compose, or something else?
--   - Where are manifests/configs (`kubernetes/`, `docker-compose.yml`, Helm charts, etc.)?
--
--2) **What the services are called**
--   - In code: look for service folders, Docker Compose service names, Helm release names, and environment variables.
--   - In telemetry: identify the runtime identifiers (Kubernetes namespace, deployment names, service entity names, tags).
--
--3) **What the critical path is**
--   - Identify the user-facing entrypoint(s) and the downstream dependencies.
--
--If you are unsure how a service is built/run/instrumented, read that service’s `README.md` before making assumptions.
--
--## ODD value proposition (the why)
--
--- ODD reduces incidents caused by mismatched assumptions (latency, timeouts, resource limits).
--- Changes are only “done” when they’re measurable via telemetry.
--
--## Default workflow for changes
--
--When asked to implement or change behavior (especially hot paths):
--
--1) **Identify the critical path**
--   - Is this code in the request path for high‑traffic operations?
--   - Does it add synchronous I/O, new dependencies, or expensive computation?
--
--2) **Check production reality (preferred) or establish a baseline (fallback)**
--   - **Dynatrace-first (default):** query metrics/logs/traces before adding synchronous work on hot paths.
--   - If Dynatrace is not available in the current environment, state the limitation and:
--       - propose the DQL you would run (discovery-first; verify then execute), and/or
--       - establish a local baseline (e.g., run the demo + load-generator and compare p95 latency / error rate before vs after).
--
--3) **Risk gate**
--   - If the target service is already near saturation (CPU/memory/latency/error spikes), do **not** add complexity.
--   - Recommend mitigations first: scale resources, reduce scope, add caching, async patterns, or change the design.
--
--4) **Implement with guardrails**
--   - Feature‑flag new behavior when feasible.
--   - Add timeouts, retries, and circuit breakers when calling other services.
--   - Prefer connection reuse over per‑request client creation.
--   - Prefer graceful degradation for non‑critical validation (fail‑open vs fail‑closed must be explicit).
--
--5) **Instrument and verify**
--   - Emit traces/metrics/logs needed to evaluate impact (latency, error rate, resource usage).
--   - Add tests for correctness and failure modes.
--   - Run the narrowest relevant tests/builds.
--
--6) **Rollout + monitoring guidance**
--   - Provide a safe rollout plan (gradual enablement, rollback trigger thresholds).
--   - Specify what dashboards/queries to watch and what “good” looks like.
--
--## Definition of Done (ODD)
--
--For any non-trivial behavior change, the final output should include:
--
--- **Correctness:** tests (or at least a minimal reproducible validation) cover success + failure modes.
--- **Safety:** timeouts/budgets for new downstream calls; graceful degradation is explicit.
--- **Observability:** new logic is traceable and measurable (spans + metrics + logs as appropriate).
--- **Verification:** a before/after baseline plan (Dynatrace query set or local run + load).
--- **Rollback:** clear trigger thresholds (e.g., error rate, p95 latency, CPU saturation).
--
--## Observability requirements for code changes
--
--When modifying service behavior, Copilot should ensure:
--
--- **Traces:** add spans for new external calls or major sub-operations.
--- **Metrics:** record duration histograms and result counters for new logic.
--- **Logs:** include structured fields (service, operation, key IDs) at appropriate levels.
--
--If the repo already has established instrumentation patterns in the touched service, follow them.
--
--### Telemetry conventions (prefer existing patterns)
--
--- Reuse existing metric naming and prefixes in the service you touch (do not invent a new scheme).
--- Prefer OpenTelemetry semantic conventions for attributes when they exist.
--- For logs, include correlation fields when possible (trace/span ids) and add structured fields for key business identifiers (non-sensitive).
--- For spans, add attributes that make troubleshooting actionable (peer/service, operation, result, error type), but avoid high-cardinality values.
--
--### High-cardinality guardrail
--
--Do not add unbounded/high-cardinality labels (e.g., raw user input, emails, full IDs, URLs with unique path segments) to metrics or span attributes.
--
--## Hot-path safety rules
--
--On endpoints and handlers that run for every user interaction:
--
--- Avoid adding synchronous downstream calls unless you’ve validated headroom.
--- If a downstream call is required:
--  - enforce a bounded timeout,
--  - implement retries carefully (small count, only on safe errors),
--  - use circuit breaking,
--  - ensure telemetry attributes exist to debug failures quickly.
--
--## Risk tiers (how much rigor to apply)
--
--- **Tier 0 (docs/refactor/no behavior change):** minimal validation.
--- **Tier 1 (non-hot-path behavior change):** targeted tests + basic telemetry.
--- **Tier 2 (hot-path / synchronous downstream call / payload or retry changes):** baseline comparison required (Dynatrace preferred), strict timeouts/budgets, and explicit rollback triggers.
--
--## Dynatrace‑assisted development (if available)
--
--If asked “is this safe for production?”, answer in terms of:
--- baseline vs expected deltas (CPU, memory, latency, error rate)
--- current saturation signals (spikes, upward trends, throttling, OOM/restarts)
--- dependency capacity (downstream services)
--- explicit go/no-go criteria and rollback triggers
--
--### Dynatrace workflow (recommended)
--
--1) **Confirm connection** (if supported by your environment): get tenant/env info.
--2) **Discover entities/filters**: list namespaces/deployments or service entities instead of guessing.
--3) **Generate queries**: use short windows for triage and longer windows for trend.
--4) **Verify then execute**: syntactically validate DQL before running if needed.
--5) **Summarize as deltas**: what changed, expected impact, and go/no-go thresholds.
--
--Rule of thumb for query cost:
--- Use short windows (`now() - 30m` to `now() - 2h`) for triage.
--- Use longer windows (e.g., `now() - 24h`) for baselines only with tight filters + aggregation.
--- Filter by time early, then narrow by stable identifiers before doing text search.
--
--### Dynatrace query hygiene (high-signal rules)
--
--- **Don’t mix record types:** keep each DQL snippet to a single query (no multi-statement blocks).
--- **`summarize` requires an aggregation** (e.g., `count()`, `avg(...)`, `percentile(...)`).
--- **`sort` must use an alias**, not an aggregation function call.
--- **Avoid `in(...)` / set-literal syntax** for multi-values in DQL filters; use explicit `or` chains.
--- **Entity vs K8s fields:** K8s metadata (like `k8s.namespace.name`) is not guaranteed on entity record types such as `fetch dt.entity.service`. Prefer filtering entities by `entity.name` patterns, IDs, or tags.
--- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
--
--### When reviewing or fixing a DQL query
--
--- Identify issues first (syntax, field availability, filter order/cost) before executing anything.
--- Fix and **`verify_dql`** first; only then execute.
--- If a query returns 0 records, suggest the minimal next steps:
--   - widen time range,
--   - verify field names exist (run a minimal `fetch <type> | limit 5`),
--   - check case/values and `and` logic,
--   - validate entity IDs (canonical `SERVICE-...` etc.).
--
--### Dynatrace queries
--
--- Discover filters first (namespace/deployment/service entity) before narrowing.
--- Keep each DQL example to a single query (no multi-statement blocks).
--- Verify then execute; summarize deltas vs baseline.
--
--#### Minimal DQL templates (copy/paste)
--
--**Discover active Kubernetes namespaces**
--
--```dql
--fetch logs
--| filter timestamp > now() - 1h
--| summarize logCount = count(), by:{k8s.namespace.name}
--| sort logCount desc
--```
--
--**Discover deployments within a namespace**
--
--```dql
--fetch logs
--| filter timestamp > now() - 1h
--   and k8s.namespace.name == "<YOUR_NAMESPACE>"
--| summarize logCount = count(), by:{k8s.deployment.name}
--| sort logCount desc
--```
--
--**List service entities (entity names)**
--
--```dql
--fetch dt.entity.service
--| fields id, entity.name
--| sort entity.name asc
--```
--
--**Errors in logs by deployment**
--
--```dql
--fetch logs
--| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
--   and loglevel == "ERROR"
--   and timestamp > now() - 1h
--| summarize errorCount = count(), by:{k8s.deployment.name}
--| sort errorCount desc
--```
--
--**CPU/memory by deployment**
--
--```dql
--timeseries avg(dt.kubernetes.container.cpu_usage),
--   avg(dt.kubernetes.container.memory_working_set),
--   from: now() - 1h, interval: 1m,
--   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
--   by: {k8s.deployment.name}
--```
--
--**Service latency + failures (service metrics)**
--
--```dql
--timeseries avg(dt.service.request.response_time),
--   percentile(dt.service.request.response_time, 95),
--   sum(dt.service.request.failure_count),
--   from: now() - 1h, interval: 1m,
--   by: {dt.entity.service}
--```
--
--**Slow spans (hot operations)**
--
--```dql
--fetch spans
--| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
--   and timestamp > now() - 30m
--   and duration > 1000000000
--| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
--| sort p95 desc
--```
--
--**Metric discovery (when you don’t know the key)**
--
--```dql
--fetch metric.series
--| filter dt.entity.service == "<SERVICE-ID>"
--| summarize cnt = count(), by:{metric.key}
--| sort cnt desc | limit 50
--```
--
--## Local baseline workflow (when production telemetry isn’t available)
--
--When Dynatrace is unavailable, establish a before/after baseline locally:
--
--- Use the repo’s documented run path (root `docker compose up` or Kubernetes manifests).
--- Use the included load generator (if available in the chosen deployment) to create consistent traffic.
--- Compare **error rate** and **p95 latency** before vs after for the most relevant user-facing entrypoint.
--- If the change affects a single service, run that service’s narrowest test/build command (see the service `README.md`).
--
--## Output expectations from Copilot
--
--For non-trivial changes, Copilot should include in its response:
--
--- What was changed (files + intent)
--- What observability was added/updated (traces/metrics/logs)
--- What risk checks were performed (or why they couldn’t be)
--- How to validate locally (commands/tests)
--- What to monitor and what thresholds would trigger rollback
--
--If the work is Tier 2, include a short “Go/No-Go” decision with explicit criteria.
--
--## Scope and style
--
--- Keep changes minimal and consistent with the existing codebase.
--- Don’t introduce new frameworks or broad refactors unless explicitly requested.
--- Don’t invent new product requirements; if ambiguous, choose the simplest safe interpretation and call out assumptions.
+new file mode 100644
+index 0000000..921823b
+--- /dev/null
++++ b/.github/copilot-instructions.md
+@@ -0,0 +1,272 @@
++# GitHub Copilot Instructions — Observability‑Driven Development (ODD)
++
++These instructions guide Copilot to support **observability‑driven development**: use real production signals (or best available telemetry) during design and implementation to **avoid breaking the system**, and to ship safely.
++
++## Agentic expectations (how Copilot should behave)
++
++When the user asks to implement a change:
++
++- Prefer taking action over theorizing: explore the repo, implement the smallest safe change, and validate it.
++- Use a short plan for non-trivial work (multi-file, multi-step, or behavior changes on request paths).
++- Treat observability as part of the feature: changes are not “done” until they can be evaluated via traces/metrics/logs.
++- If the request is ambiguous, ask 1–3 precise clarifying questions or state assumptions explicitly.
++
++When you cannot access production telemetry (no Dynatrace access), say so and use the local baseline workflow.
++
++## Repo context (don’t guess)
++
++Do not assume what the repo contains.
++
++Before suggesting code changes or observability queries, first discover:
++
++1) **How the system runs**
++   - Kubernetes, Docker Compose, or something else?
++   - Where are manifests/configs (`kubernetes/`, `docker-compose.yml`, Helm charts, etc.)?
++
++2) **What the services are called**
++   - In code: look for service folders, Docker Compose service names, Helm release names, and environment variables.
++   - In telemetry: identify the runtime identifiers (Kubernetes namespace, deployment names, service entity names, tags).
++
++3) **What the critical path is**
++   - Identify the user-facing entrypoint(s) and the downstream dependencies.
++
++If you are unsure how a service is built/run/instrumented, read that service’s `README.md` before making assumptions.
++
++## ODD value proposition (the why)
++
++- ODD reduces incidents caused by mismatched assumptions (latency, timeouts, resource limits).
++- Changes are only “done” when they’re measurable via telemetry.
++
++## Default workflow for changes
++
++When asked to implement or change behavior (especially hot paths):
++
++1) **Identify the critical path**
++   - Is this code in the request path for high‑traffic operations?
++   - Does it add synchronous I/O, new dependencies, or expensive computation?
++
++2) **Check production reality (preferred) or establish a baseline (fallback)**
++   - **Dynatrace-first (default):** query metrics/logs/traces before adding synchronous work on hot paths.
++   - If Dynatrace is not available in the current environment, state the limitation and:
++       - propose the DQL you would run (discovery-first; verify then execute), and/or
++       - establish a local baseline (e.g., run the demo + load-generator and compare p95 latency / error rate before vs after).
++
++3) **Risk gate**
++   - If the target service is already near saturation (CPU/memory/latency/error spikes), do **not** add complexity.
++   - Recommend mitigations first: scale resources, reduce scope, add caching, async patterns, or change the design.
++
++4) **Implement with guardrails**
++   - Feature‑flag new behavior when feasible.
++   - Add timeouts, retries, and circuit breakers when calling other services.
++   - Prefer connection reuse over per‑request client creation.
++   - Prefer graceful degradation for non‑critical validation (fail‑open vs fail‑closed must be explicit).
++
++5) **Instrument and verify**
++   - Emit traces/metrics/logs needed to evaluate impact (latency, error rate, resource usage).
++   - Add tests for correctness and failure modes.
++   - Run the narrowest relevant tests/builds.
++
++6) **Rollout + monitoring guidance**
++   - Provide a safe rollout plan (gradual enablement, rollback trigger thresholds).
++   - Specify what dashboards/queries to watch and what “good” looks like.
++
++## Definition of Done (ODD)
++
++For any non-trivial behavior change, the final output should include:
++
++- **Correctness:** tests (or at least a minimal reproducible validation) cover success + failure modes.
++- **Safety:** timeouts/budgets for new downstream calls; graceful degradation is explicit.
++- **Observability:** new logic is traceable and measurable (spans + metrics + logs as appropriate).
++- **Verification:** a before/after baseline plan (Dynatrace query set or local run + load).
++- **Rollback:** clear trigger thresholds (e.g., error rate, p95 latency, CPU saturation).
++
++## Observability requirements for code changes
++
++When modifying service behavior, Copilot should ensure:
++
++- **Traces:** add spans for new external calls or major sub-operations.
++- **Metrics:** record duration histograms and result counters for new logic.
++- **Logs:** include structured fields (service, operation, key IDs) at appropriate levels.
++
++If the repo already has established instrumentation patterns in the touched service, follow them.
++
++### Telemetry conventions (prefer existing patterns)
++
++- Reuse existing metric naming and prefixes in the service you touch (do not invent a new scheme).
++- Prefer OpenTelemetry semantic conventions for attributes when they exist.
++- For logs, include correlation fields when possible (trace/span ids) and add structured fields for key business identifiers (non-sensitive).
++- For spans, add attributes that make troubleshooting actionable (peer/service, operation, result, error type), but avoid high-cardinality values.
++
++### High-cardinality guardrail
++
++Do not add unbounded/high-cardinality labels (e.g., raw user input, emails, full IDs, URLs with unique path segments) to metrics or span attributes.
++
++## Hot-path safety rules
++
++On endpoints and handlers that run for every user interaction:
++
++- Avoid adding synchronous downstream calls unless you’ve validated headroom.
++- If a downstream call is required:
++  - enforce a bounded timeout,
++  - implement retries carefully (small count, only on safe errors),
++  - use circuit breaking,
++  - ensure telemetry attributes exist to debug failures quickly.
++
++## Risk tiers (how much rigor to apply)
++
++- **Tier 0 (docs/refactor/no behavior change):** minimal validation.
++- **Tier 1 (non-hot-path behavior change):** targeted tests + basic telemetry.
++- **Tier 2 (hot-path / synchronous downstream call / payload or retry changes):** baseline comparison required (Dynatrace preferred), strict timeouts/budgets, and explicit rollback triggers.
++
++## Dynatrace‑assisted development (if available)
++
++If asked “is this safe for production?”, answer in terms of:
++- baseline vs expected deltas (CPU, memory, latency, error rate)
++- current saturation signals (spikes, upward trends, throttling, OOM/restarts)
++- dependency capacity (downstream services)
++- explicit go/no-go criteria and rollback triggers
++
++### Dynatrace workflow (recommended)
++
++1) **Confirm connection** (if supported by your environment): get tenant/env info.
++2) **Discover entities/filters**: list namespaces/deployments or service entities instead of guessing.
++3) **Generate queries**: use short windows for triage and longer windows for trend.
++4) **Verify then execute**: syntactically validate DQL before running if needed.
++5) **Summarize as deltas**: what changed, expected impact, and go/no-go thresholds.
++
++Rule of thumb for query cost:
++- Use short windows (`now() - 30m` to `now() - 2h`) for triage.
++- Use longer windows (e.g., `now() - 24h`) for baselines only with tight filters + aggregation.
++- Filter by time early, then narrow by stable identifiers before doing text search.
++
++### Dynatrace query hygiene (high-signal rules)
++
++- **Don’t mix record types:** keep each DQL snippet to a single query (no multi-statement blocks).
++- **`summarize` requires an aggregation** (e.g., `count()`, `avg(...)`, `percentile(...)`).
++- **`sort` must use an alias**, not an aggregation function call.
++- **Avoid `in(...)` / set-literal syntax** for multi-values in DQL filters; use explicit `or` chains.
++- **Entity vs K8s fields:** K8s metadata (like `k8s.namespace.name`) is not guaranteed on entity record types such as `fetch dt.entity.service`. Prefer filtering entities by `entity.name` patterns, IDs, or tags.
++- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
++
++### When reviewing or fixing a DQL query
++
++- Identify issues first (syntax, field availability, filter order/cost) before executing anything.
++- Fix and **`verify_dql`** first; only then execute.
++- If a query returns 0 records, suggest the minimal next steps:
++   - widen time range,
++   - verify field names exist (run a minimal `fetch <type> | limit 5`),
++   - check case/values and `and` logic,
++   - validate entity IDs (canonical `SERVICE-...` etc.).
++
++### Dynatrace queries
++
++- Discover filters first (namespace/deployment/service entity) before narrowing.
++- Keep each DQL example to a single query (no multi-statement blocks).
++- Verify then execute; summarize deltas vs baseline.
++
++#### Minimal DQL templates (copy/paste)
++
++**Discover active Kubernetes namespaces**
++
++```dql
++fetch logs
++| filter timestamp > now() - 1h
++| summarize logCount = count(), by:{k8s.namespace.name}
++| sort logCount desc
++```
++
++**Discover deployments within a namespace**
++
++```dql
++fetch logs
++| filter timestamp > now() - 1h
++   and k8s.namespace.name == "<YOUR_NAMESPACE>"
++| summarize logCount = count(), by:{k8s.deployment.name}
++| sort logCount desc
++```
++
++**List service entities (entity names)**
++
++```dql
++fetch dt.entity.service
++| fields id, entity.name
++| sort entity.name asc
++```
++
++**Errors in logs by deployment**
++
++```dql
++fetch logs
++| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
++   and loglevel == "ERROR"
++   and timestamp > now() - 1h
++| summarize errorCount = count(), by:{k8s.deployment.name}
++| sort errorCount desc
++```
++
++**CPU/memory by deployment**
++
++```dql
++timeseries avg(dt.kubernetes.container.cpu_usage),
++   avg(dt.kubernetes.container.memory_working_set),
++   from: now() - 1h, interval: 1m,
++   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
++   by: {k8s.deployment.name}
++```
++
++**Service latency + failures (service metrics)**
++
++```dql
++timeseries avg(dt.service.request.response_time),
++   percentile(dt.service.request.response_time, 95),
++   sum(dt.service.request.failure_count),
++   from: now() - 1h, interval: 1m,
++   by: {dt.entity.service}
++```
++
++**Slow spans (hot operations)**
++
++```dql
++fetch spans
++| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
++   and timestamp > now() - 30m
++   and duration > 1000000000
++| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
++| sort p95 desc
++```
++
++**Metric discovery (when you don’t know the key)**
++
++```dql
++fetch metric.series
++| filter dt.entity.service == "<SERVICE-ID>"
++| summarize cnt = count(), by:{metric.key}
++| sort cnt desc | limit 50
++```
++
++## Local baseline workflow (when production telemetry isn’t available)
++
++When Dynatrace is unavailable, establish a before/after baseline locally:
++
++- Use the repo’s documented run path (root `docker compose up` or Kubernetes manifests).
++- Use the included load generator (if available in the chosen deployment) to create consistent traffic.
++- Compare **error rate** and **p95 latency** before vs after for the most relevant user-facing entrypoint.
++- If the change affects a single service, run that service’s narrowest test/build command (see the service `README.md`).
++
++## Output expectations from Copilot
++
++For non-trivial changes, Copilot should include in its response:
++
++- What was changed (files + intent)
++- What observability was added/updated (traces/metrics/logs)
++- What risk checks were performed (or why they couldn’t be)
++- How to validate locally (commands/tests)
++- What to monitor and what thresholds would trigger rollback
++
++If the work is Tier 2, include a short “Go/No-Go” decision with explicit criteria.
++
++## Scope and style
++
++- Keep changes minimal and consistent with the existing codebase.
++- Don’t introduce new frameworks or broad refactors unless explicitly requested.
++- Don’t invent new product requirements; if ambiguous, choose the simplest safe interpretation and call out assumptions.
 diff --git a/.kiro/steering/odd.md b/.kiro/steering/odd.md
-deleted file mode 100644
-index e9bd541..0000000
---- a/.kiro/steering/odd.md
-+++ /dev/null
-@@ -1,161 +0,0 @@
--# Observability-Driven Development (ODD) — Steering
--
--ODD is a delivery constraint: behavior changes are not “done” unless they can be validated via telemetry (traces/metrics/logs) and rolled out safely.
--
--## Default workflow
--
--1) **Identify the critical path**
--   - Is the change on a hot path (runs for every user action) or in a background path?
--
--2) **Baseline first (before change)**
--   - **Dynatrace-first (default):** capture latency (p95), error rate, and saturation signals (CPU/memory/restarts) for the affected services.
--   - If Dynatrace is not available in the current environment, use the local baseline workflow below.
--
--3) **Implement with guardrails**
--   - Bound new downstream calls with timeouts.
--   - Keep retries small and only on safe errors.
--   - Prefer graceful degradation for non-critical validation (explicit fail-open vs fail-closed).
--
--4) **Instrument and verify**
--   - Add spans for new sub-operations / downstream calls.
--   - Add metrics for duration + success/failure counters.
--   - Add structured logs for key operations (avoid sensitive/high-cardinality values).
--
--5) **After-change verification**
--   - Re-run the same baseline queries and summarize deltas.
--   - State rollback criteria before rollout.
--
--## Risk tiers
--
--- **Tier 0:** docs/refactor/no behavior change → minimal validation.
--- **Tier 1:** non-hot-path behavior change → targeted tests + basic telemetry.
--- **Tier 2:** hot-path change / sync downstream call / payload or retry change → baseline comparison required, strict timeouts/budgets, explicit rollback triggers.
--
--## Guardrails
--
--- **High-cardinality safety:** don’t put raw user input, full IDs, emails, or unique URLs into metric labels or span attributes.
--- **Prefer stable identifiers:** use canonical entity IDs, namespaces, and deployment names for scoping.
--- **Don’t guess production reality:** if you can’t measure headroom, do not add synchronous work on hot paths.
--
--## Dynatrace (default)
--
--Dynatrace-first applies here: use Dynatrace as the primary validation gate for behavior changes.
--
--If Dynatrace is not available in the current environment, fall back to the local baseline workflow.
--
--- Discover the right filters (namespace/deployment/service entity) before narrowing.
--- Verify queries before executing.
--- Keep each DQL example to a single query; avoid multi-statement blocks.
--
--### Minimal DQL templates (copy/paste)
--
--**Discover active Kubernetes namespaces**
--
--```dql
--fetch logs
--| filter timestamp > now() - 1h
--| summarize logCount = count(), by:{k8s.namespace.name}
--| sort logCount desc
--```
--
--**Discover deployments within a namespace**
--
--```dql
--fetch logs
--| filter timestamp > now() - 1h
--   and k8s.namespace.name == "<YOUR_NAMESPACE>"
--| summarize logCount = count(), by:{k8s.deployment.name}
--| sort logCount desc
--```
--
--**List service entities (entity names)**
--
--```dql
--fetch dt.entity.service
--| fields id, entity.name
--| sort entity.name asc
--```
--
--**Errors in logs by deployment**
--
--```dql
--fetch logs
--| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
--   and loglevel == "ERROR"
--   and timestamp > now() - 1h
--| summarize errorCount = count(), by:{k8s.deployment.name}
--| sort errorCount desc
--```
--
--**CPU/memory by deployment**
--
--```dql
--timeseries avg(dt.kubernetes.container.cpu_usage),
--   avg(dt.kubernetes.container.memory_working_set),
--   from: now() - 1h, interval: 1m,
--   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
--   by: {k8s.deployment.name}
--```
--
--**Service latency + failures (service metrics)**
--
--```dql
--timeseries avg(dt.service.request.response_time),
--   percentile(dt.service.request.response_time, 95),
--   sum(dt.service.request.failure_count),
--   from: now() - 1h, interval: 1m,
--   by: {dt.entity.service}
--```
--
--**Slow spans (hot operations)**
--
--```dql
--fetch spans
--| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
--   and timestamp > now() - 30m
--   and duration > 1000000000
--| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
--| sort p95 desc
--```
--
--**Metric discovery (when you don’t know the key)**
--
--```dql
--fetch metric.series
--| filter dt.entity.service == "<SERVICE-ID>"
--| summarize cnt = count(), by:{metric.key}
--| sort cnt desc | limit 50
--```
--
--### DQL hygiene (common failure modes)
--
--- `summarize` must include an aggregation function.
--- `sort` must sort by an alias (not by `count()` / `avg(...)` directly).
--- Avoid `in(...)` / set-literal syntax; use explicit `or` chains.
--- Don’t assume K8s fields exist on entity record types (e.g., `fetch dt.entity.service`).
--- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
--
--### Time ranges & query cost (rule of thumb)
--
--- Prefer `now() - 30m` to `now() - 2h` for active triage.
--- Use `now() - 24h` for baselines, but keep aggregation (`summarize`/`timeseries`) and filters tight.
--- Filter by time early, then narrow by stable identifiers (entity IDs, namespace/deployment), then do text search.
--
--### Agentic query behavior
--
--- Execute the narrowest relevant query when asked for data; show results first, then interpret.
--- Never execute a query you already know is broken; fix/verify first.
--- If results are empty, state “0 records” and propose 1–3 minimal next checks (time range, field existence, filter logic).
--
--### “Zero results” checklist
--
--1. Widen time range.
--2. Validate field existence via a minimal `fetch <type> | limit 5`.
--3. Re-check case/values and `and` logic.
--4. Validate canonical entity IDs (e.g., `SERVICE-...`).
--
--## Local baseline (when production telemetry isn’t available)
--
--- Run the demo with consistent traffic (load generator if available).
--- Compare before/after error rate and p95 latency for the user-facing entrypoint.
--- Keep the validation narrow to the affected services.
+new file mode 100644
+index 0000000..e9bd541
+--- /dev/null
++++ b/.kiro/steering/odd.md
+@@ -0,0 +1,161 @@
++# Observability-Driven Development (ODD) — Steering
++
++ODD is a delivery constraint: behavior changes are not “done” unless they can be validated via telemetry (traces/metrics/logs) and rolled out safely.
++
++## Default workflow
++
++1) **Identify the critical path**
++   - Is the change on a hot path (runs for every user action) or in a background path?
++
++2) **Baseline first (before change)**
++   - **Dynatrace-first (default):** capture latency (p95), error rate, and saturation signals (CPU/memory/restarts) for the affected services.
++   - If Dynatrace is not available in the current environment, use the local baseline workflow below.
++
++3) **Implement with guardrails**
++   - Bound new downstream calls with timeouts.
++   - Keep retries small and only on safe errors.
++   - Prefer graceful degradation for non-critical validation (explicit fail-open vs fail-closed).
++
++4) **Instrument and verify**
++   - Add spans for new sub-operations / downstream calls.
++   - Add metrics for duration + success/failure counters.
++   - Add structured logs for key operations (avoid sensitive/high-cardinality values).
++
++5) **After-change verification**
++   - Re-run the same baseline queries and summarize deltas.
++   - State rollback criteria before rollout.
++
++## Risk tiers
++
++- **Tier 0:** docs/refactor/no behavior change → minimal validation.
++- **Tier 1:** non-hot-path behavior change → targeted tests + basic telemetry.
++- **Tier 2:** hot-path change / sync downstream call / payload or retry change → baseline comparison required, strict timeouts/budgets, explicit rollback triggers.
++
++## Guardrails
++
++- **High-cardinality safety:** don’t put raw user input, full IDs, emails, or unique URLs into metric labels or span attributes.
++- **Prefer stable identifiers:** use canonical entity IDs, namespaces, and deployment names for scoping.
++- **Don’t guess production reality:** if you can’t measure headroom, do not add synchronous work on hot paths.
++
++## Dynatrace (default)
++
++Dynatrace-first applies here: use Dynatrace as the primary validation gate for behavior changes.
++
++If Dynatrace is not available in the current environment, fall back to the local baseline workflow.
++
++- Discover the right filters (namespace/deployment/service entity) before narrowing.
++- Verify queries before executing.
++- Keep each DQL example to a single query; avoid multi-statement blocks.
++
++### Minimal DQL templates (copy/paste)
++
++**Discover active Kubernetes namespaces**
++
++```dql
++fetch logs
++| filter timestamp > now() - 1h
++| summarize logCount = count(), by:{k8s.namespace.name}
++| sort logCount desc
++```
++
++**Discover deployments within a namespace**
++
++```dql
++fetch logs
++| filter timestamp > now() - 1h
++   and k8s.namespace.name == "<YOUR_NAMESPACE>"
++| summarize logCount = count(), by:{k8s.deployment.name}
++| sort logCount desc
++```
++
++**List service entities (entity names)**
++
++```dql
++fetch dt.entity.service
++| fields id, entity.name
++| sort entity.name asc
++```
++
++**Errors in logs by deployment**
++
++```dql
++fetch logs
++| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
++   and loglevel == "ERROR"
++   and timestamp > now() - 1h
++| summarize errorCount = count(), by:{k8s.deployment.name}
++| sort errorCount desc
++```
++
++**CPU/memory by deployment**
++
++```dql
++timeseries avg(dt.kubernetes.container.cpu_usage),
++   avg(dt.kubernetes.container.memory_working_set),
++   from: now() - 1h, interval: 1m,
++   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
++   by: {k8s.deployment.name}
++```
++
++**Service latency + failures (service metrics)**
++
++```dql
++timeseries avg(dt.service.request.response_time),
++   percentile(dt.service.request.response_time, 95),
++   sum(dt.service.request.failure_count),
++   from: now() - 1h, interval: 1m,
++   by: {dt.entity.service}
++```
++
++**Slow spans (hot operations)**
++
++```dql
++fetch spans
++| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
++   and timestamp > now() - 30m
++   and duration > 1000000000
++| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
++| sort p95 desc
++```
++
++**Metric discovery (when you don’t know the key)**
++
++```dql
++fetch metric.series
++| filter dt.entity.service == "<SERVICE-ID>"
++| summarize cnt = count(), by:{metric.key}
++| sort cnt desc | limit 50
++```
++
++### DQL hygiene (common failure modes)
++
++- `summarize` must include an aggregation function.
++- `sort` must sort by an alias (not by `count()` / `avg(...)` directly).
++- Avoid `in(...)` / set-literal syntax; use explicit `or` chains.
++- Don’t assume K8s fields exist on entity record types (e.g., `fetch dt.entity.service`).
++- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
++
++### Time ranges & query cost (rule of thumb)
++
++- Prefer `now() - 30m` to `now() - 2h` for active triage.
++- Use `now() - 24h` for baselines, but keep aggregation (`summarize`/`timeseries`) and filters tight.
++- Filter by time early, then narrow by stable identifiers (entity IDs, namespace/deployment), then do text search.
++
++### Agentic query behavior
++
++- Execute the narrowest relevant query when asked for data; show results first, then interpret.
++- Never execute a query you already know is broken; fix/verify first.
++- If results are empty, state “0 records” and propose 1–3 minimal next checks (time range, field existence, filter logic).
++
++### “Zero results” checklist
++
++1. Widen time range.
++2. Validate field existence via a minimal `fetch <type> | limit 5`.
++3. Re-check case/values and `and` logic.
++4. Validate canonical entity IDs (e.g., `SERVICE-...`).
++
++## Local baseline (when production telemetry isn’t available)
++
++- Run the demo with consistent traffic (load generator if available).
++- Compare before/after error rate and p95 latency for the user-facing entrypoint.
++- Keep the validation narrow to the affected services.
