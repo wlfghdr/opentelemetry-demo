@@ -1,7 +1,7 @@
-# OpenTelemetry Demo - Resource Saturation & Critical Path Analysis
+# Resource Saturation & Critical Path Analysis (Template)
 
 **Analysis Date:** 2025-11-21  
-**Namespace:** prod (eks-playground)  
+**Namespace:** <YOUR_NAMESPACE>  
 **Time Range:** Last 2 hours
 
 ## Executive Summary
@@ -304,7 +304,7 @@ Estimated Impact: Service degradation or outages
 ### 1. Service Health Dashboard
 ```dql
 fetch logs
-| filter k8s.namespace.name == "prod" and timestamp > now() - 15m
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>" and timestamp > now() - 15m
 | summarize logCount = count(), 
     errorCount = countIf(loglevel == "ERROR"),
     warnCount = countIf(loglevel == "WARN"),
@@ -319,14 +319,14 @@ fetch logs
 timeseries avg(dt.kubernetes.container.cpu_usage),
   avg(dt.kubernetes.container.memory_working_set),
   from: now() - 1h, interval: 5m,
-  filter: k8s.namespace.name == "prod",
+   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
   by: {k8s.deployment.name}
 ```
 
 ### 3. Service Dependency Impact
 ```dql
 fetch spans 
-| filter k8s.namespace.name == "prod"
+| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
   and timestamp > now() - 30m 
   and duration > 1000000000
 | summarize avgDuration = avg(duration), 
@@ -340,14 +340,12 @@ fetch spans
 
 ## Conclusion
 
-The OpenTelemetry demo is running stably with **no active problems**, but several services show resource pressure:
+Based on recent telemetry, the system appears stable overall, but some services show resource pressure.
 
-**Critical Services (Do Not Add Complexity):**
-- Frontend (memory growth + errors)
-- Cart (high CPU)
-- Currency (high request volume)
+**Critical Services (avoid adding complexity):**
+- Services with increasing CPU, memory growth, or elevated error rate in the last 30–60 minutes.
 
-**Safe Services (Can Enhance):**
-- Email, Shipping, Product Catalog, Recommendation
+**Safer Candidates (consider enhancements):**
+- Services with low utilization, stable memory, and low error rate.
 
-**Key Insight:** Dynatrace data provides objective evidence for development decisions, preventing performance degradation before it occurs.
+**Key Insight:** Use telemetry to validate assumptions before adding synchronous work on hot paths.
