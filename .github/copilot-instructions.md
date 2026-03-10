@@ -1,272 +1,214 @@
-# GitHub Copilot Instructions — Observability‑Driven Development (ODD)
+# GitHub Copilot Instructions — Observability-Driven Development (ODD)
 
-These instructions guide Copilot to support **observability‑driven development**: use real production signals (or best available telemetry) during design and implementation to **avoid breaking the system**, and to ship safely.
+These instructions guide Copilot to support observability-driven development: use real runtime signals, or the best local substitute, during design and implementation to avoid breaking the system and to ship safely.
 
-## Agentic expectations (how Copilot should behave)
+## Agentic expectations
 
 When the user asks to implement a change:
 
 - Prefer taking action over theorizing: explore the repo, implement the smallest safe change, and validate it.
-- Use a short plan for non-trivial work (multi-file, multi-step, or behavior changes on request paths).
-- Treat observability as part of the feature: changes are not “done” until they can be evaluated via traces/metrics/logs.
-- If the request is ambiguous, ask 1–3 precise clarifying questions or state assumptions explicitly.
+- Use a short plan for non-trivial work.
+- Treat observability as part of the feature: changes are not done until they can be evaluated via traces, metrics, and logs.
+- If the request is ambiguous, ask 1-3 precise clarifying questions or state assumptions explicitly.
 
-When you cannot access production telemetry (no Dynatrace access), say so and use the local baseline workflow.
+When you cannot access Dynatrace or `dtctl`, say so and use the local baseline workflow.
 
-## Repo context (don’t guess)
+## Repo context
 
 Do not assume what the repo contains.
 
 Before suggesting code changes or observability queries, first discover:
 
-1) **How the system runs**
+1. How the system runs.
    - Kubernetes, Docker Compose, or something else?
-   - Where are manifests/configs (`kubernetes/`, `docker-compose.yml`, Helm charts, etc.)?
+   - Where are manifests and configs such as `kubernetes/` or `docker-compose.yml`?
+2. What the services are called.
+   - In code: service folders, Docker Compose service names, Helm release names, and environment variables.
+   - In telemetry: namespace, deployment, service entity names, and tags.
+3. What the critical path is.
+   - Identify the user-facing entrypoints and the downstream dependencies.
 
-2) **What the services are called**
-   - In code: look for service folders, Docker Compose service names, Helm release names, and environment variables.
-   - In telemetry: identify the runtime identifiers (Kubernetes namespace, deployment names, service entity names, tags).
+If you are unsure how a service is built, run, or instrumented, read that service's `README.md` before making assumptions.
 
-3) **What the critical path is**
-   - Identify the user-facing entrypoint(s) and the downstream dependencies.
+## ODD value proposition
 
-If you are unsure how a service is built/run/instrumented, read that service’s `README.md` before making assumptions.
+- ODD reduces incidents caused by mismatched assumptions about latency, timeouts, and capacity.
+- Changes are only done when they are measurable and safe to roll back.
 
-## ODD value proposition (the why)
+## dtctl-first operating model
 
-- ODD reduces incidents caused by mismatched assumptions (latency, timeouts, resource limits).
-- Changes are only “done” when they’re measurable via telemetry.
+Prefer `dtctl` as the default interface to Dynatrace.
+
+Why:
+
+- It covers query verification and execution.
+- It manages workflows, dashboards, notebooks, SLOs, settings objects, lookups, and buckets.
+- It supports contexts, safety levels, dry runs, diffs, and templated apply flows.
+- It is agent-friendly through `dtctl commands --brief -o json`, `--plain`, and `--agent`.
+
+Dynatrace MCP is optional and secondary. Use it when it is already available and clearly faster for a narrow task, but do not block ODD on MCP availability.
 
 ## Default workflow for changes
 
-When asked to implement or change behavior (especially hot paths):
+When asked to implement or change behavior, especially on hot paths:
 
-1) **Identify the critical path**
-   - Is this code in the request path for high‑traffic operations?
+1. Identify the critical path.
+   - Is this code in the request path for high-traffic operations?
    - Does it add synchronous I/O, new dependencies, or expensive computation?
-
-2) **Check production reality (preferred) or establish a baseline (fallback)**
-   - **Dynatrace-first (default):** query metrics/logs/traces before adding synchronous work on hot paths.
-   - If Dynatrace is not available in the current environment, state the limitation and:
-       - propose the DQL you would run (discovery-first; verify then execute), and/or
-       - establish a local baseline (e.g., run the demo + load-generator and compare p95 latency / error rate before vs after).
-
-3) **Risk gate**
-   - If the target service is already near saturation (CPU/memory/latency/error spikes), do **not** add complexity.
-   - Recommend mitigations first: scale resources, reduce scope, add caching, async patterns, or change the design.
-
-4) **Implement with guardrails**
-   - Feature‑flag new behavior when feasible.
+2. Check production reality or establish a fallback baseline.
+   - Start with `dtctl doctor`, `dtctl ctx`, and `dtctl commands --brief -o json` if you need capability discovery.
+   - Verify DQL before running it: `dtctl verify query ...`, then `dtctl query ...`.
+   - If Dynatrace or `dtctl` is unavailable, state the limitation and either propose the `dtctl` commands you would run or establish a local baseline with the demo and `load-generator`.
+3. Apply a risk gate.
+   - If the target service is already near saturation, do not add complexity.
+   - Recommend mitigations first: narrower scope, caching, async patterns, workflow-based checks, or a different design.
+4. Implement with guardrails.
+   - Feature-flag new behavior when feasible.
    - Add timeouts, retries, and circuit breakers when calling other services.
-   - Prefer connection reuse over per‑request client creation.
-   - Prefer graceful degradation for non‑critical validation (fail‑open vs fail‑closed must be explicit).
-
-5) **Instrument and verify**
-   - Emit traces/metrics/logs needed to evaluate impact (latency, error rate, resource usage).
+   - Prefer connection reuse over per-request client creation.
+   - Prefer graceful degradation for non-critical validation.
+5. Instrument and verify.
+   - Emit traces, metrics, and logs needed to evaluate impact.
    - Add tests for correctness and failure modes.
-   - Run the narrowest relevant tests/builds.
+   - Run the narrowest relevant tests and builds.
+   - When the change needs durable operational support, use `dtctl` to create or update workflows, dashboards, notebooks, SLOs, settings objects, lookups, or buckets.
+6. Provide rollout and monitoring guidance.
+   - Give a safe rollout plan.
+   - Specify what to monitor and what good looks like.
 
-6) **Rollout + monitoring guidance**
-   - Provide a safe rollout plan (gradual enablement, rollback trigger thresholds).
-   - Specify what dashboards/queries to watch and what “good” looks like.
-
-## Definition of Done (ODD)
+## Definition of done
 
 For any non-trivial behavior change, the final output should include:
 
-- **Correctness:** tests (or at least a minimal reproducible validation) cover success + failure modes.
-- **Safety:** timeouts/budgets for new downstream calls; graceful degradation is explicit.
-- **Observability:** new logic is traceable and measurable (spans + metrics + logs as appropriate).
-- **Verification:** a before/after baseline plan (Dynatrace query set or local run + load).
-- **Rollback:** clear trigger thresholds (e.g., error rate, p95 latency, CPU saturation).
+- correctness validation covering success and failure modes
+- explicit safety for new downstream calls
+- observability that makes the new logic measurable
+- a before/after baseline plan based on `dtctl` queries or a local run plus load
+- rollback triggers grounded in error rate, latency, or saturation
 
 ## Observability requirements for code changes
 
-When modifying service behavior, Copilot should ensure:
+When modifying service behavior, ensure:
 
-- **Traces:** add spans for new external calls or major sub-operations.
-- **Metrics:** record duration histograms and result counters for new logic.
-- **Logs:** include structured fields (service, operation, key IDs) at appropriate levels.
+- traces for new external calls or major sub-operations
+- metrics for duration and result counters
+- logs with structured fields at appropriate levels
 
-If the repo already has established instrumentation patterns in the touched service, follow them.
+If the repo already has instrumentation conventions in the touched service, follow them.
 
-### Telemetry conventions (prefer existing patterns)
+### Telemetry conventions
 
-- Reuse existing metric naming and prefixes in the service you touch (do not invent a new scheme).
+- Reuse existing metric naming and prefixes in the service you touch.
 - Prefer OpenTelemetry semantic conventions for attributes when they exist.
-- For logs, include correlation fields when possible (trace/span ids) and add structured fields for key business identifiers (non-sensitive).
-- For spans, add attributes that make troubleshooting actionable (peer/service, operation, result, error type), but avoid high-cardinality values.
+- For logs, include correlation fields when possible and structured business identifiers that are not sensitive.
+- For spans, add actionable attributes but avoid high-cardinality values.
 
 ### High-cardinality guardrail
 
-Do not add unbounded/high-cardinality labels (e.g., raw user input, emails, full IDs, URLs with unique path segments) to metrics or span attributes.
+Do not add unbounded or high-cardinality labels such as raw user input, emails, full IDs, or unique URLs to metrics or span attributes.
 
 ## Hot-path safety rules
 
 On endpoints and handlers that run for every user interaction:
 
-- Avoid adding synchronous downstream calls unless you’ve validated headroom.
+- Avoid adding synchronous downstream calls unless you have validated headroom.
 - If a downstream call is required:
-  - enforce a bounded timeout,
-  - implement retries carefully (small count, only on safe errors),
-  - use circuit breaking,
-  - ensure telemetry attributes exist to debug failures quickly.
+  - enforce a bounded timeout
+  - implement retries carefully and only on safe errors
+  - use circuit breaking where appropriate
+  - ensure telemetry attributes exist to debug failures quickly
 
-## Risk tiers (how much rigor to apply)
+## Risk tiers
 
-- **Tier 0 (docs/refactor/no behavior change):** minimal validation.
-- **Tier 1 (non-hot-path behavior change):** targeted tests + basic telemetry.
-- **Tier 2 (hot-path / synchronous downstream call / payload or retry changes):** baseline comparison required (Dynatrace preferred), strict timeouts/budgets, and explicit rollback triggers.
+- Tier 0: docs, refactor, or no behavior change -> minimal validation
+- Tier 1: non-hot-path behavior change -> targeted tests plus basic telemetry
+- Tier 2: hot-path change, synchronous downstream call, payload change, retry change, or runtime config change -> baseline comparison required, strict budgets required, explicit rollback triggers required
 
-## Dynatrace‑assisted development (if available)
+## Dynatrace-assisted development
 
-If asked “is this safe for production?”, answer in terms of:
-- baseline vs expected deltas (CPU, memory, latency, error rate)
-- current saturation signals (spikes, upward trends, throttling, OOM/restarts)
-- dependency capacity (downstream services)
-- explicit go/no-go criteria and rollback triggers
+If asked whether a change is safe for production, answer in terms of:
 
-### Dynatrace workflow (recommended)
+- baseline versus expected deltas for CPU, memory, latency, and error rate
+- current saturation signals such as spikes, throttling, OOMs, or restart loops
+- dependency capacity
+- explicit go or no-go criteria and rollback triggers
 
-1) **Confirm connection** (if supported by your environment): get tenant/env info.
-2) **Discover entities/filters**: list namespaces/deployments or service entities instead of guessing.
-3) **Generate queries**: use short windows for triage and longer windows for trend.
-4) **Verify then execute**: syntactically validate DQL before running if needed.
-5) **Summarize as deltas**: what changed, expected impact, and go/no-go thresholds.
+### dtctl workflow
+
+1. Confirm connection and safety context.
+   - `dtctl doctor`
+   - `dtctl ctx`
+   - `dtctl auth whoami` when identity matters
+2. Discover entities and artifacts instead of guessing.
+   - services, namespaces, deployments, workflows, dashboards, notebooks, SLOs, settings schemas
+3. Verify and then execute queries.
+   - `dtctl verify query ...`
+   - `dtctl query ...`
+4. Operationalize the result when useful.
+   - `dtctl apply -f workflow.yaml`
+   - `dtctl apply -f dashboard.yaml`
+   - `dtctl apply -f notebook.yaml`
+   - `dtctl apply -f settings.yaml`
+   - `dtctl apply -f slo.yaml`
+5. Summarize findings as deltas and risk decisions.
 
 Rule of thumb for query cost:
-- Use short windows (`now() - 30m` to `now() - 2h`) for triage.
-- Use longer windows (e.g., `now() - 24h`) for baselines only with tight filters + aggregation.
-- Filter by time early, then narrow by stable identifiers before doing text search.
 
-### Dynatrace query hygiene (high-signal rules)
+- use short windows for triage
+- use longer windows for baselines only with tight filters and aggregation
+- filter by time early, then narrow by stable identifiers before text search
 
-- **Don’t mix record types:** keep each DQL snippet to a single query (no multi-statement blocks).
-- **`summarize` requires an aggregation** (e.g., `count()`, `avg(...)`, `percentile(...)`).
-- **`sort` must use an alias**, not an aggregation function call.
-- **Avoid `in(...)` / set-literal syntax** for multi-values in DQL filters; use explicit `or` chains.
-- **Entity vs K8s fields:** K8s metadata (like `k8s.namespace.name`) is not guaranteed on entity record types such as `fetch dt.entity.service`. Prefer filtering entities by `entity.name` patterns, IDs, or tags.
-- **Entity metadata vs metrics:** entity record types (`fetch dt.entity.*`) return metadata; use `timeseries ...` for metrics (don’t try to select metric keys as entity fields).
+### Query hygiene
+
+- Keep each DQL snippet to a single query.
+- `summarize` requires an aggregation.
+- `sort` must sort by an alias.
+- Avoid `in(...)` or set-literal syntax when explicit `or` chains are clearer.
+- Do not assume Kubernetes fields exist on entity record types.
+- Do not expect entity metadata queries to behave like timeseries metric queries.
 
 ### When reviewing or fixing a DQL query
 
-- Identify issues first (syntax, field availability, filter order/cost) before executing anything.
-- Fix and **`verify_dql`** first; only then execute.
-- If a query returns 0 records, suggest the minimal next steps:
-   - widen time range,
-   - verify field names exist (run a minimal `fetch <type> | limit 5`),
-   - check case/values and `and` logic,
-   - validate entity IDs (canonical `SERVICE-...` etc.).
+- Identify syntax, field, and filter issues before execution.
+- Fix and verify first with `dtctl verify query`, then execute with `dtctl query`.
+- If a query returns `0 records`, propose the next smallest checks: widen time range, validate field existence, check filter logic, validate entity IDs.
 
-### Dynatrace queries
+### dtctl control-plane usage
 
-- Discover filters first (namespace/deployment/service entity) before narrowing.
-- Keep each DQL example to a single query (no multi-statement blocks).
-- Verify then execute; summarize deltas vs baseline.
+Use `dtctl` for more than queries when the change warrants it:
 
-#### Minimal DQL templates (copy/paste)
+- workflows: `get`, `describe`, `edit`, `apply`, `exec`, `logs`
+- dashboards and notebooks: `get`, `describe`, `edit`, `apply`, `share`
+- SLOs: `get`, `create`, `apply`, `exec`
+- settings and OpenPipeline config: `get settings-schemas`, `get`, `create`, `update`, `apply settings`
+- lookups and buckets for enrichment and storage changes
 
-**Discover active Kubernetes namespaces**
+Prefer `apply`, `--dry-run`, `diff`, and safer contexts for repeatable, low-risk changes.
 
-```dql
-fetch logs
-| filter timestamp > now() - 1h
-| summarize logCount = count(), by:{k8s.namespace.name}
-| sort logCount desc
-```
+## Local baseline workflow
 
-**Discover deployments within a namespace**
+When Dynatrace or `dtctl` is unavailable, establish a before/after baseline locally:
 
-```dql
-fetch logs
-| filter timestamp > now() - 1h
-   and k8s.namespace.name == "<YOUR_NAMESPACE>"
-| summarize logCount = count(), by:{k8s.deployment.name}
-| sort logCount desc
-```
-
-**List service entities (entity names)**
-
-```dql
-fetch dt.entity.service
-| fields id, entity.name
-| sort entity.name asc
-```
-
-**Errors in logs by deployment**
-
-```dql
-fetch logs
-| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
-   and loglevel == "ERROR"
-   and timestamp > now() - 1h
-| summarize errorCount = count(), by:{k8s.deployment.name}
-| sort errorCount desc
-```
-
-**CPU/memory by deployment**
-
-```dql
-timeseries avg(dt.kubernetes.container.cpu_usage),
-   avg(dt.kubernetes.container.memory_working_set),
-   from: now() - 1h, interval: 1m,
-   filter: k8s.namespace.name == "<YOUR_NAMESPACE>",
-   by: {k8s.deployment.name}
-```
-
-**Service latency + failures (service metrics)**
-
-```dql
-timeseries avg(dt.service.request.response_time),
-   percentile(dt.service.request.response_time, 95),
-   sum(dt.service.request.failure_count),
-   from: now() - 1h, interval: 1m,
-   by: {dt.entity.service}
-```
-
-**Slow spans (hot operations)**
-
-```dql
-fetch spans
-| filter k8s.namespace.name == "<YOUR_NAMESPACE>"
-   and timestamp > now() - 30m
-   and duration > 1000000000
-| summarize p95 = percentile(duration, 95), cnt = count(), by:{dt.entity.service, span.name}
-| sort p95 desc
-```
-
-**Metric discovery (when you don’t know the key)**
-
-```dql
-fetch metric.series
-| filter dt.entity.service == "<SERVICE-ID>"
-| summarize cnt = count(), by:{metric.key}
-| sort cnt desc | limit 50
-```
-
-## Local baseline workflow (when production telemetry isn’t available)
-
-When Dynatrace is unavailable, establish a before/after baseline locally:
-
-- Use the repo’s documented run path (root `docker compose up` or Kubernetes manifests).
-- Use the included load generator (if available in the chosen deployment) to create consistent traffic.
-- Compare **error rate** and **p95 latency** before vs after for the most relevant user-facing entrypoint.
-- If the change affects a single service, run that service’s narrowest test/build command (see the service `README.md`).
+- use the repo's documented run path through Docker Compose or Kubernetes
+- use the included `load-generator` to create consistent traffic
+- compare error rate and p95 latency before and after for the relevant user-facing entrypoint
+- run the narrowest relevant service tests or builds
 
 ## Output expectations from Copilot
 
-For non-trivial changes, Copilot should include in its response:
+For non-trivial changes, include:
 
-- What was changed (files + intent)
-- What observability was added/updated (traces/metrics/logs)
-- What risk checks were performed (or why they couldn’t be)
-- How to validate locally (commands/tests)
-- What to monitor and what thresholds would trigger rollback
+- what changed and why
+- what observability was added or updated
+- what Dynatrace assets were added or updated through `dtctl` when applicable
+- what risk checks were performed, or why they could not be performed
+- how to validate locally
+- what to monitor and what thresholds should trigger rollback
 
-If the work is Tier 2, include a short “Go/No-Go” decision with explicit criteria.
+If the work is Tier 2, include a short go or no-go decision with explicit criteria.
 
 ## Scope and style
 
 - Keep changes minimal and consistent with the existing codebase.
-- Don’t introduce new frameworks or broad refactors unless explicitly requested.
-- Don’t invent new product requirements; if ambiguous, choose the simplest safe interpretation and call out assumptions.
+- Do not introduce new frameworks or broad refactors unless explicitly requested.
+- Do not invent new product requirements. If ambiguous, choose the simplest safe interpretation and call out assumptions.
