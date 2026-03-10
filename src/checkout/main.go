@@ -739,6 +739,7 @@ func (cs *checkout) attachCheckoutRecommendations(ctx context.Context, userID st
 		ProductIds: productIDs,
 	})
 	if err != nil {
+		recSpan.RecordError(err)
 		recSpan.SetStatus(otelcodes.Error, err.Error())
 		logger.LogAttrs(
 			ctx,
