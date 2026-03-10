@@ -133,21 +133,23 @@ func initLoggerProvider() *sdklog.LoggerProvider {
 }
 
 type checkout struct {
-	productCatalogSvcAddr string
-	cartSvcAddr           string
-	currencySvcAddr       string
-	shippingSvcAddr       string
-	emailSvcAddr          string
-	paymentSvcAddr        string
-	kafkaBrokerSvcAddr    string
+	productCatalogSvcAddr  string
+	cartSvcAddr            string
+	currencySvcAddr        string
+	shippingSvcAddr        string
+	emailSvcAddr           string
+	paymentSvcAddr         string
+	recommendationSvcAddr  string
+	kafkaBrokerSvcAddr     string
 	pb.UnimplementedCheckoutServiceServer
-	KafkaProducerClient     sarama.AsyncProducer
-	shippingSvcClient       pb.ShippingServiceClient
-	productCatalogSvcClient pb.ProductCatalogServiceClient
-	cartSvcClient           pb.CartServiceClient
-	currencySvcClient       pb.CurrencyServiceClient
-	emailSvcClient          pb.EmailServiceClient
-	paymentSvcClient        pb.PaymentServiceClient
+	KafkaProducerClient        sarama.AsyncProducer
+	shippingSvcClient          pb.ShippingServiceClient
+	productCatalogSvcClient    pb.ProductCatalogServiceClient
+	cartSvcClient              pb.CartServiceClient
+	currencySvcClient          pb.CurrencyServiceClient
+	emailSvcClient             pb.EmailServiceClient
+	paymentSvcClient           pb.PaymentServiceClient
+	recommendationSvcClient    pb.RecommendationServiceClient
 }
 
 func main() {
@@ -227,6 +229,13 @@ func main() {
 	c = mustCreateClient(svc.paymentSvcAddr)
 	svc.paymentSvcClient = pb.NewPaymentServiceClient(c)
 	defer c.Close()
+
+	svc.recommendationSvcAddr = os.Getenv("RECOMMENDATION_ADDR")
+	if svc.recommendationSvcAddr != "" {
+		c = mustCreateClient(svc.recommendationSvcAddr)
+		svc.recommendationSvcClient = pb.NewRecommendationServiceClient(c)
+		defer c.Close()
+	}
 
 	svc.kafkaBrokerSvcAddr = os.Getenv("KAFKA_ADDR")
 
@@ -380,6 +389,10 @@ func (cs *checkout) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (
 		logger.Warn(fmt.Sprintf("failed to send order confirmation to %q: %+v", req.Email, err))
 	} else {
 		logger.Info(fmt.Sprintf("order confirmation email sent to %q", req.Email))
+	}
+
+	if cs.isFeatureFlagEnabled(ctx, "checkoutRecommendations") {
+		cs.attachCheckoutRecommendations(ctx, req.UserId, prep.cartItems)
 	}
 
 	// send to kafka only if kafka broker address is set
@@ -698,6 +711,52 @@ func createProducerSpan(ctx context.Context, msg *sarama.ProducerMessage) trace.
 	}
 
 	return span
+}
+
+// attachCheckoutRecommendations calls the recommendation service to fetch product
+// suggestions based on the items in the just-placed order. The call is non-critical:
+// it degrades gracefully so a recommendation service failure never blocks checkout.
+// A bounded 2-second timeout prevents latency bleed into the checkout hot path.
+func (cs *checkout) attachCheckoutRecommendations(ctx context.Context, userID string, cartItems []*pb.CartItem) {
+	if cs.recommendationSvcClient == nil {
+		logger.Warn("recommendation service client not configured; skipping checkout recommendations")
+		return
+	}
+
+	rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	_, recSpan := tracer.Start(rctx, "checkout.recommendations")
+	defer recSpan.End()
+
+	productIDs := make([]string, 0, len(cartItems))
+	for _, item := range cartItems {
+		productIDs = append(productIDs, item.GetProductId())
+	}
+
+	resp, err := cs.recommendationSvcClient.ListRecommendations(rctx, &pb.ListRecommendationsRequest{
+		UserId:     userID,
+		ProductIds: productIDs,
+	})
+	if err != nil {
+		recSpan.SetStatus(otelcodes.Error, err.Error())
+		logger.LogAttrs(
+			ctx,
+			slog.LevelWarn, "checkout recommendations unavailable",
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+
+	recSpan.SetAttributes(
+		attribute.Int("app.recommendations.count", len(resp.GetProductIds())),
+		attribute.StringSlice("app.recommendations.product_ids", resp.GetProductIds()),
+	)
+	logger.LogAttrs(
+		ctx,
+		slog.LevelInfo, "checkout recommendations fetched",
+		slog.Int("app.recommendations.count", len(resp.GetProductIds())),
+	)
 }
 
 func (cs *checkout) isFeatureFlagEnabled(ctx context.Context, featureFlagName string) bool {

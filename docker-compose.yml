@@ -143,6 +143,7 @@ services:
       - PAYMENT_ADDR
       - PRODUCT_CATALOG_ADDR
       - SHIPPING_ADDR
+      - RECOMMENDATION_ADDR
       - KAFKA_ADDR
       - GOMEMLIMIT=16MiB
       - OTEL_EXPORTER_OTLP_ENDPOINT
@@ -161,6 +162,8 @@ services:
       product-catalog:
         condition: service_started
       shipping:
+        condition: service_started
+      recommendation:
         condition: service_started
       otel-collector:
         condition: service_started

@@ -136,6 +136,15 @@
         "10000x": 10000
       },
       "defaultVariant": "off"
+    },
+    "checkoutRecommendations": {
+      "description": "Fetch product recommendations from the recommendation service during checkout and attach them to the order span. Off by default to contain blast radius on the checkout hot path.",
+      "state": "ENABLED",
+      "variants": {
+        "on": true,
+        "off": false
+      },
+      "defaultVariant": "off"
     }
   }
 }

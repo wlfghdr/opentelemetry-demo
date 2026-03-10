@@ -18771,6 +18771,8 @@ spec:
               value: product-catalog:8080
             - name: SHIPPING_ADDR
               value: http://shipping:8080
+            - name: RECOMMENDATION_ADDR
+              value: recommendation:8080
             - name: KAFKA_ADDR
               value: kafka:9092
             - name: FLAGD_HOST
